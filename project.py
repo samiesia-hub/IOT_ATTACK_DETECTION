@@ -3,6 +3,8 @@ import argparse
 import json
 import os
 import time
+import hashlib
+import platform
 from pathlib import Path
 
 os.environ.setdefault('OMP_NUM_THREADS', '1')
@@ -24,6 +26,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler, LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
+import psutil
 
 DATA = Path('data/processed')
 MODELS = Path('models')
@@ -49,9 +52,10 @@ def prepare(args):
             chunk.columns = chunk.columns.str.strip()
             if not {'attack', 'category', 'subcategory'}.issubset(chunk.columns):
                 raise SystemExit(f'{path} is missing attack/category/subcategory columns; check the official release schema.')
-            labels = np.where(pd.to_numeric(chunk['attack'], errors='coerce') == 0, 'Normal', chunk['category'].astype(str).str.strip())
-            if pd.to_numeric(chunk['attack'], errors='coerce').isna().any():
+            attack = pd.to_numeric(chunk['attack'], errors='coerce')
+            if not attack.isin([0, 1]).all() or chunk.loc[attack == 1, 'category'].isna().any():
                 raise ValueError('Invalid attack labels found')
+            labels = np.where(attack == 0, 'Normal', chunk['category'].astype(str).str.strip())
             chunk = chunk.assign(target=labels)
             for label, group in chunk.groupby('target'):
                 counts[label] = counts.get(label, 0) + len(group)
@@ -75,7 +79,14 @@ def prepare(args):
     val, test = train_test_split(rest, test_size=.5, stratify=rest.target, random_state=SEED)
     for name, part in [('train', train), ('validation', val), ('test', test)]:
         part.to_parquet(DATA / (name + '.parquet'), index=False)
-    profile = {'source_counts': counts, 'sample_counts_after_dedup': support.to_dict(), 'conflicting_fingerprints': len(bad), 'features': features, 'split': 'stratified row 70/15/15', 'seed': SEED, 'sampling': f'up to {args.per_class} rows per category before splitting'}
+    sources = []
+    for path in files:
+        digest = hashlib.sha256()
+        with path.open('rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        sources.append({'file': str(path), 'bytes': path.stat().st_size, 'sha256': digest.hexdigest()})
+    profile = {'sources': sources, 'source_counts': counts, 'sample_counts_after_dedup': support.to_dict(), 'split_counts': {name: part.target.value_counts().to_dict() for name, part in [('train', train), ('validation', val), ('test', test)]}, 'conflicting_fingerprints': len(bad), 'features': features, 'split': 'stratified row 70/15/15', 'seed': SEED, 'sampling': f'up to {args.per_class} rows per category before splitting'}
     (RESULTS / 'data_profile.json').write_text(json.dumps(profile, indent=2), encoding='utf8')
     print(json.dumps(profile, indent=2))
 
@@ -111,9 +122,10 @@ def train(args):
         pipe = Pipeline([('preprocess', preprocessor(X, name in {'logistic_regression', 'dense_network'})), ('model', estimator)])
         start = time.perf_counter()
         pipe.fit(X, y_enc)
+        fit_seconds = time.perf_counter() - start
         pred = pipe.predict(val.drop(columns='target'))
         score = f1_score(encoder.transform(val.target), pred, average='macro', zero_division=0)
-        scores[name] = {'validation_macro_f1': score, 'fit_seconds': time.perf_counter() - start}
+        scores[name] = {'validation_macro_f1': score, 'fit_seconds': fit_seconds}
         joblib.dump({'pipeline': pipe, 'encoder': encoder, 'features': list(X.columns)}, MODELS / (name + '.joblib'))
     winner = max((k for k in scores if k != 'dummy'), key=lambda k: scores[k]['validation_macro_f1'])
     (RESULTS / 'validation.json').write_text(json.dumps({'scores': scores, 'selected_model': winner}, indent=2), encoding='utf8')
@@ -124,7 +136,9 @@ def evaluate(args):
     dirs()
     df = pd.read_parquet(DATA / 'test.parquet')
     rows = []
-    for path in sorted(MODELS.glob('*.joblib')):
+    model_names = json.loads((RESULTS / 'validation.json').read_text(encoding='utf8'))['scores']
+    for name in model_names:
+        path = MODELS / (name + '.joblib')
         bundle = joblib.load(path)
         X = df[bundle['features']]
         y = bundle['encoder'].transform(df.target)
@@ -133,15 +147,31 @@ def evaluate(args):
         (RESULTS / (path.stem + '_report.json')).write_text(json.dumps(report, indent=2), encoding='utf8')
         cm = confusion_matrix(y, pred, labels=np.arange(len(bundle['encoder'].classes_)))
         pd.DataFrame(cm, index=bundle['encoder'].classes_, columns=bundle['encoder'].classes_).to_csv(RESULTS / (path.stem + '_confusion.csv'))
-        sample = X.iloc[:min(1000, len(X))]
+        normalized = np.divide(cm, cm.sum(axis=1, keepdims=True), out=np.zeros_like(cm, dtype=float), where=cm.sum(axis=1, keepdims=True) != 0)
+        pd.DataFrame(normalized, index=bundle['encoder'].classes_, columns=bundle['encoder'].classes_).to_csv(RESULTS / (path.stem + '_confusion_normalized.csv'))
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(normalized, annot=True, fmt='.2f', xticklabels=bundle['encoder'].classes_, yticklabels=bundle['encoder'].classes_, ax=ax, cmap='Blues')
+        ax.set(xlabel='Predicted', ylabel='True', title=path.stem + ' normalized confusion matrix')
+        fig.tight_layout()
+        fig.savefig(RESULTS / (path.stem + '_confusion.png'), dpi=150)
+        plt.close(fig)
+        normal = bundle['encoder'].transform(['Normal'])[0] if 'Normal' in bundle['encoder'].classes_ else None
+        benign = y == normal
+        attack_recall = float(np.mean(pred[~benign] != normal)) if normal is not None and (~benign).any() else None
+        benign_fpr = float(np.mean(pred[benign] != normal)) if normal is not None and benign.any() else None
+        validation = pd.read_parquet(DATA / 'validation.parquet')
+        sample = validation[bundle['features']].iloc[:min(1000, len(validation))]
         bundle['pipeline'].predict(sample.iloc[:1])
         timings = []
         for i in range(len(sample)):
             start = time.perf_counter_ns()
             bundle['pipeline'].predict(sample.iloc[i:i+1])
             timings.append((time.perf_counter_ns() - start) / 1e6)
-        rows.append({'model': path.stem, 'accuracy': accuracy_score(y, pred), 'macro_f1': report['macro avg']['f1-score'], 'weighted_f1': report['weighted avg']['f1-score'], 'p50_ms': float(np.median(timings)), 'p95_ms': float(np.percentile(timings, 95)), 'artifact_mib': path.stat().st_size / 1048576})
+        rows.append({'model': path.stem, 'accuracy': accuracy_score(y, pred), 'macro_precision': report['macro avg']['precision'], 'macro_recall': report['macro avg']['recall'], 'macro_f1': report['macro avg']['f1-score'], 'weighted_f1': report['weighted avg']['f1-score'], 'attack_recall': attack_recall, 'benign_fpr': benign_fpr, 'p50_ms': float(np.median(timings)), 'p95_ms': float(np.percentile(timings, 95)), 'artifact_mib': path.stat().st_size / 1048576, 'process_rss_mib': psutil.Process().memory_info().rss / 1048576})
     pd.DataFrame(rows).to_csv(RESULTS / 'comparison.csv', index=False)
+    (RESULTS / 'benchmark_environment.json').write_text(json.dumps({'platform': platform.platform(), 'processor': platform.processor(), 'logical_cpus': psutil.cpu_count(), 'ram_gib': psutil.virtual_memory().total / 1024**3, 'note': 'Single-row preprocessing plus model prediction on validation inputs; current process RSS is not peak memory. Packet capture and feature extraction excluded.'}, indent=2), encoding='utf8')
     print(pd.DataFrame(rows).to_string(index=False))
 
 
