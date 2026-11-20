@@ -1,0 +1,624 @@
+IOT ATTACK DETECTION
+Detailed three day implementation plan for a two person team
+
+Prepared 20 November 2026
+Language: English
+Resources: Windows laptop, 8 GB RAM, GPU with 2 GB memory
+Status: Implementation plan. No data has been downloaded and no models have been trained.
+
+1. THE PROJECT YOU WILL BUILD
+
+Build an offline machine learning pipeline that reads published IoT network features, predicts normal traffic or an attack category, compares five models, and measures how expensive inference is on your laptop CPU. Package one selected model with its preprocessing and provide a command line demonstration.
+
+Recommended dataset: the official Bot-IoT 5% subset. UNSW describes this as four files totaling approximately 1.07 GB and about three million records. It includes normal and botnet traffic, including DDoS, DoS, scanning, and theft activities. Obtain the actual files and descriptions from the official source, not an unidentified mirror. [S1]
+
+Why this choice: a bounded official subset makes the acquisition step manageable within three days. Its class imbalance will still require careful treatment. The smaller training set proposed below is a project choice, not an official benchmark split.
+
+Use one dataset, not all three. The assignment lists alternatives, and you have permission to choose. Compare Decision Tree, Random Forest, Logistic Regression, XGBoost, and a small dense neural network. XGBoost satisfies the XGBoost / LightGBM choice; implementing both is unnecessary for this deadline.
+
+Main research question: which of these five models gives the best practical compromise between attack detection, false alarms, model size, memory consumption, and CPU inference latency on the selected Bot-IoT subset?
+
+Important scope distinction: Bot-IoT is a botnet traffic dataset, but “botnet” is not automatically a separate mutually exclusive category alongside DDoS and reconnaissance. Use the dataset's actual labels. Do not invent a Mirai label or claim to identify every botnet family.
+
+The result is an experimental intrusion detection prototype. It is not an antivirus, an automatic firewall, or a guarantee of security on a real IoT network.
+
+2. WHAT MUST BE FINISHED
+
+Required outputs
+  1. A reproducible project folder with a README, dependency lock, configuration, and runnable scripts.
+  2. A source manifest and a brief dataset profile with class counts and feature descriptions.
+  3. A documented cleaning, deduplication, sampling, and train/validation/test protocol.
+  4. Five trained models evaluated on the same held-out examples.
+  5. A comparison CSV with precision, recall, F1, accuracy, and timing information.
+  6. Per-class metrics and confusion matrices, including normal traffic false alarms.
+  7. CPU inference measurements, saved artifact sizes, and process memory observations.
+  8. A saved model bundle and a working batch prediction command.
+  9. A short report of approximately 6 to 8 pages, plus references if needed.
+
+Optional only after these outputs are complete
+  - A second seed for the strongest two models.
+  - A reduced-feature version of the selected model.
+  - A real Raspberry Pi measurement if a device becomes available.
+  - An autoencoder trained only on normal training examples.
+
+Skip a dashboard, Docker, cloud deployment, live packet capture, packet generation, CUDA setup, large grid searches, and experiments across multiple datasets. These are outside the three-day minimum.
+
+3. HARDWARE AND COMPUTE BUDGET
+
+Use CPU-only training. A GPU's 2 GB memory size does not establish its vendor, CUDA support, driver compatibility, or usefulness for this task. These small tabular models do not justify spending the deadline configuring it.
+
+Resource rules
+  - Close heavy applications while processing data or training.
+  - Run only one training process at a time on an 8 GB machine.
+  - Use two CPU threads for training initially; use one for the common inference benchmark.
+  - Read CSV files in chunks of 50,000 rows. Reduce to 10,000 if needed.
+  - Start with a 10,000-row smoke test, then approximately 100,000 training rows.
+  - Increase training to at most 200,000 rows only if the first runs fit comfortably.
+  - Preserve rare training classes when reducing the training set.
+  - Aim to keep the Python process below roughly 3 GB RSS. This is a planning budget, not an enforced limit.
+  - Reserve roughly 10 GB of free disk space for downloads, extracted files, temporary data, the environment, and outputs. Actual needs must be checked from the chosen files.
+
+For large-file cleaning, use DuckDB on disk or chunked processing rather than loading every CSV into one pandas DataFrame. Configure DuckDB with memory_limit='1GB', threads=2, and a temporary directory inside data/interim. This memory setting is not a guarantee of the whole process's peak memory; monitor RSS. Never convert a full database query into pandas accidentally.
+
+Fallback order if a run is slow or runs out of memory
+  1. Reduce training rows and tree sizes.
+  2. Reduce worker threads and CSV chunk size.
+  3. Train models sequentially and release unused arrays.
+  4. Remove optional experiments.
+  5. Keep all five required model types with small configurations.
+
+4. FAIR DIVISION OF WORK
+
+Person A owns data quality and classical baselines
+  - Download inventory and official dataset documentation.
+  - Inspect schema, labels, missing values, imbalance, and suspicious features.
+  - Implement cleaning, deduplication, sampling, and frozen splits.
+  - Implement the shared preprocessing contract.
+  - Train Decision Tree, Random Forest, and Logistic Regression.
+  - Implement common evaluation and error analysis.
+  - Write dataset, protocol, metrics, and error-analysis report sections.
+
+Person B owns neural training and inference performance
+  - Set up project structure, environment instructions, and run logging.
+  - Implement XGBoost and the small dense neural network.
+  - Implement model serialization and prediction interfaces.
+  - Implement CPU latency, throughput, loading, and memory benchmarks.
+  - Build the command line demonstration and reproducibility instructions.
+  - Write architecture, model, performance, and deployment-limit sections.
+
+Both people
+  - Agree on labels, feature exclusions, split policy, and metrics before training.
+  - Review one another's leakage checks and model loading code.
+  - Choose configurations using validation data only.
+  - Freeze choices before opening final test results.
+  - Assemble and proofread the report; rehearse the demonstration.
+
+Estimated effort: approximately 18 to 22 focused hours per person across three days. These are planning estimates, not promised runtimes. If only one laptop is available, share its training queue; Person B can write benchmarking and report material while Person A processes data.
+
+Do not let Person A become the only person who understands the dataset. Person B must review the schema and split audit before training.
+
+5. THE THREE DAY SCHEDULE
+
+DAY 1 — Get a trustworthy baseline working
+
+Hours 0 to 1, together
+  - Read this plan and agree on ownership.
+  - Install the core tools and create the environment.
+  - Open the official dataset page and start the 5% subset download.
+  - Create the repository and ignore large/local files.
+  Exit condition: both people understand the target and can run Python imports.
+
+Hours 1 to 3
+  Person A: inspect actual headers, label values, counts, file sizes, and documentation.
+  Person B: create configuration, result schema, model interface, and smoke-test runner.
+  Person B can use a tiny synthetic fixture only to verify code paths; it is not experimental evidence.
+  Exit condition: a schema note and a small real-data sample are available.
+
+Hours 3 to 5
+  Person A: implement leakage-aware feature selection, cleaning, deduplication, and candidate splits.
+  Person B: implement XGBoost and neural training against the shared interface.
+  Together: inspect split overlaps and class supports; freeze the split manifest.
+  Exit condition: train, validation, and test files plus schema and audit artifacts exist.
+
+Hours 5 to 7
+  Person A: run DummyClassifier, Decision Tree, and Logistic Regression.
+  Person B: run small XGBoost and neural smoke tests, then start normal training.
+  Exit condition: at least one real-data pipeline saves, reloads, predicts, and evaluates correctly.
+
+Day 1 stop rule: if the full data preparation is unfinished, reduce the working sample, not the quality checks. Do not start a second dataset or build a user interface.
+
+DAY 2 — Complete the five model comparison
+
+Hours 0 to 2
+  Person A: train Random Forest and finish baseline validation results.
+  Person B: finish XGBoost and dense network validation results.
+  Exit condition: all five model families have one complete run.
+
+Hours 2 to 4
+  Both: compare validation macro-F1, per-class recall, false positives, fit time, and size.
+  Try at most one additional configuration per family when there is a clear reason.
+  Person A: produce class-distribution and validation confusion plots.
+  Person B: implement benchmark and prediction commands.
+  Exit condition: candidate configurations and the common benchmark are ready.
+
+Hours 4 to 6
+  Together: freeze each model configuration and the model-selection rule.
+  Person A: run the final common test evaluation and generate per-class tables.
+  Person B: benchmark the frozen models, sequentially, with no concurrent training.
+  Exit condition: test and performance CSV files are generated by code.
+
+Hours 6 to 7
+  Both: identify the largest errors and select the deployment candidate using the predeclared rule.
+  If a software bug invalidates results, fix it and mark the old run invalid. Do not silently tune on test errors.
+
+DAY 3 — Package, explain, and verify
+
+Hours 0 to 2
+  Person A: write the data, evaluation, and confusion analysis.
+  Person B: package the chosen model and run the CLI demonstration.
+
+Hours 2 to 4
+  Person A: write limitations and check every reported number against output files.
+  Person B: write installation, architecture, resource measurements, and reproduction steps.
+
+Hours 4 to 6
+  Both: rerun the smoke test from a fresh environment if feasible; verify load-and-predict parity.
+  Finish the 6 to 8 page report and rehearse a 5 to 8 minute explanation.
+
+Remaining time is a buffer for installation, download, or integration problems. Do not spend it starting the autoencoder before the report and demo pass.
+
+6. INSTALLATION ON WINDOWS
+
+Install these tools from official sources
+  - Python 3.11 or 3.12, 64-bit. Use the same minor version on both machines. [S4]
+  - Git for Windows for version control. [S5]
+  - VS Code with its Python extension, or an editor you already know. [S6]
+  - Microsoft Visual C++ Redistributable for your architecture if XGBoost reports missing DLLs. XGBoost's official installation guide documents this Windows dependency. [S7]
+
+Do not install Anaconda, CUDA, Docker, TensorFlow, or Wireshark for the minimum project. Python's built-in venv is enough. JupyterLab is optional; scripts are the reproducible execution path.
+
+The commands below are instructions for the team, not commands already executed. Run them in PowerShell from your project directory. The example assumes Python 3.11; substitute 3.12 consistently if that is what you installed.
+
+    py -3.11 --version
+    git --version
+    py -3.11 -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+Create requirements.in with these package names, one per line
+
+    numpy
+    pandas
+    pyarrow
+    duckdb
+    scikit-learn
+    xgboost
+    matplotlib
+    seaborn
+    joblib
+    psutil
+    pyyaml
+    pytest
+
+Install the core packages and CPU PyTorch
+
+    .\.venv\Scripts\python.exe -m pip install -r requirements.in
+    .\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+    .\.venv\Scripts\python.exe -m pip check
+    .\.venv\Scripts\python.exe -c "import pandas, sklearn, xgboost, torch, duckdb; print('Imports OK'); print('Torch:', torch.__version__)"
+    .\.venv\Scripts\python.exe -m pip freeze > requirements-lock.txt
+
+PyTorch's official installer supports selecting the operating system and CPU compute platform. If the command is incompatible with your Python or architecture, use its official selector; do not spend hours compiling it. [S8]
+
+Do not change PowerShell execution policy just to activate the environment. Calling .venv\Scripts\python.exe directly works without activation. Select that interpreter in VS Code as well.
+
+Both people should keep the same requirements-lock.txt after a successful smoke test. Record the CPU PyTorch index command in the README: pip freeze alone does not preserve the package source. On the second machine, install the matching torch build from that index and then install the lock file; run pip check again.
+
+The unpinned requirements.in is a starting recipe, not a tested lock. Exact versions are locked only after installation and successful imports. Do not claim the environment was validated before running these checks.
+
+Neural fallback if PyTorch installation remains blocked after approximately 30 minutes
+  Use scikit-learn MLPClassifier with hidden_layer_sizes=(64, 32) as the small dense network. It is a feedforward neural network, but does not demonstrate a separate PyTorch training loop. Explain this choice to the teacher if framework-specific work is expected. Use partial_fit with a manual external-validation loop if you need validation-based stopping; do not silently replace the shared validation set with its built-in random split. [S9]
+
+7. DATA ACQUISITION AND INITIAL STUDY
+
+Start at the official UNSW Bot-IoT page and follow its download link. Select the published 5% subset and its feature descriptions. Do not download the PCAP collection for this plan. Record the actual archive/file names rather than relying on names copied from a tutorial. [S1]
+
+Create data/source_manifest.csv containing
+  dataset_name, official_page, file_name, download_date, bytes, sha256, subset_description.
+
+Example checksum command after downloading an actual CSV
+
+    Get-FileHash -LiteralPath 'data\raw\ACTUAL_FILENAME.csv' -Algorithm SHA256
+
+Keep downloaded files unchanged in data/raw. Do not put raw datasets or credentials in Git. Cite the dataset paper required by its source page in the report and follow the source's academic-use terms. [S1]
+
+If the official download is blocked or inaccessible for 45 minutes, record the failure and inspect the official CICIoT2023 CSV distribution as the fallback. It supplies extracted features and examples. Do not merge the datasets. Changing dataset requires a new label map and schema audit. [S2]
+
+Initial inspection must answer
+  - What does one row represent according to this release's documentation?
+  - Which columns are numeric, categorical, timestamps, identifiers, or labels?
+  - What are the exact category and subcategory spellings?
+  - How many records and unique feature vectors exist per class?
+  - How much normal traffic is present?
+  - Are any columns missing, constant, infinite, malformed, or nearly duplicate?
+  - Are files independent captures, or merely storage partitions?
+  - Are there documented official train/test partitions worth preserving?
+
+Write the answers to reports/data_profile.txt and produce class_counts.csv. Record counts before and after every filtering stage. Never describe class proportions from memory.
+
+8. LABELS AND FEATURE CONTRACT
+
+Primary target: attack category classification, using the actual release labels. The expected family structure is normal traffic, DDoS, DoS, reconnaissance, and theft; confirm the exact schema before writing a mapping. Keep an explicit label_map.json. Do not silently drop categories that appear in the files.
+
+Secondary view: normal versus any attack. Derive this view from each multiclass prediction to avoid doubling the training workload. Preserve attack subcategories as analysis metadata so errors can be broken down further, where support is sufficient.
+
+For normal rows, reconcile any category placeholders with the binary attack flag using the documentation. A category mapping should stop with an informative error when it sees an unknown label. Never guess that an unrecognized category means normal traffic.
+
+Exclude from model inputs
+  - Binary attack label, category, subcategory, and every target-derived field.
+  - Row IDs, sequence numbers, CSV indices, and filenames.
+  - Source/destination IP addresses in the baseline; they can encode the lab's attacker identity.
+  - Absolute capture timestamps in the baseline; retain them as split metadata if useful.
+  - Features whose construction uses future records, labels, or full-capture statistics unavailable at prediction time.
+
+Keep plausible traffic features such as duration, byte counts, packet counts, rates, protocol, and connection state only after verifying their definitions. Ports can be legitimate features; retain or exclude them with an explicit reason rather than treating them as automatically safe or automatically forbidden.
+
+Some derived dataset features may require global or time-window aggregation. Identify those dependencies. Either exclude them from the deployable candidate or explicitly describe the required extractor and its unmeasured cost.
+
+Save feature_schema.json with ordered feature names, numeric/categorical types, missing-value policy, excluded-column reasons, label order, and schema version. The label order must be identical in model probabilities, tables, and plots.
+
+9. CLEANING AND LEAKAGE RESISTANT SPLITTING
+
+Implement the following order. Person B reviews the audit before training.
+
+Step 1 — Normalize without learning from the data
+  Strip accidental header whitespace, parse numeric fields consistently, normalize documented category spellings, and convert infinities to missing values. Count parsing failures. Do not replace all missing values with zero; zero can be a real measurement.
+
+Step 2 — Identify duplicates and conflicting labels
+  Create a canonical fingerprint from the actual input feature values, excluding labels and metadata. Use stable serialization with explicit missing-value handling. Calculate fingerprints after the chosen type conversions so identical model inputs are recognized. Do not include a unique row ID or timestamp merely to make every fingerprint different.
+  Keep a deterministic representative for identical inputs with the same label. If identical inputs have contradictory labels, quarantine the group and report its size and class impact. This exclusion changes the evaluation population and must be disclosed.
+  Perform this using disk-backed processing when necessary. Do not implement a separate deduplication pass inside each split; cross-split duplicates would survive.
+
+Step 3 — Select the evaluation split policy before training
+  If trustworthy session/capture/time grouping exists, prefer holding out independent groups or later captures. Do not equate “different CSV file” with “independent recording” without evidence. Check whether each class has enough independent groups to appear in train, validation, and test.
+  If group separation destroys class coverage, do not move individual records across groups to conceal the issue. Document the tradeoff. For this three-day project, a stratified split of globally deduplicated records is an acceptable fallback, explicitly described as an easier within-dataset evaluation that may retain temporal correlation.
+  If the release includes an official split, inspect its purpose and overlap first. Preserve it where appropriate, and obtain validation data only from its training portion; otherwise label your split as custom.
+
+Step 4 — Make the splits
+  Target 70% train, 15% validation, and 15% test with seed 42. For a simple stratified split, first hold out 30%, then divide that holdout in half. For group splitting, prioritize group separation; the ratios may be approximate. StratifiedGroupKFold can help when enough independent groups exist. [S10]
+  Save immutable row IDs, source references, group IDs where available, and fingerprints in a split manifest. All five models use these same partitions.
+  If any class has fewer than three independent examples/groups, a reliable three-way per-class evaluation is impossible. Report that constraint. Do not duplicate examples into multiple splits or silently remove the class. If this makes the main comparison infeasible, use the dataset fallback on Day 1.
+
+Step 5 — Reduce compute without contaminating evaluation
+  Downsample the training partition only. Start at approximately 100,000 total rows, retain all available rare training classes, and cap dominant classes to fit the budget. Save the exact selection and resulting class counts once, then reuse it for every model.
+  Prefer keeping the full deduplicated validation and test partitions. Evaluate them in batches so they do not need to fit in RAM alongside training arrays. Their prevalence is that of the cleaned official subset, not real-world IoT traffic.
+  If full holdout evaluation is too slow, use a fixed approximately proportional stratified sample chosen before training. Report its class supports and sampling fractions. Do not rebalance the headline test set. A separate deliberately enriched rare-class diagnostic sample is allowed only if clearly labeled and not mixed with the main metrics.
+
+Step 6 — Fit preprocessing on training data only
+  Numeric columns: median imputation. Remove wholly missing or constant features based on training data only.
+  Categorical columns: an explicit missing token and OneHotEncoder(handle_unknown='ignore'). Keep categories low-dimensional; do not one-hot encode IP addresses.
+  Logistic Regression and the dense network: StandardScaler on numeric inputs after imputation. Tree models: imputation and categorical encoding, without requiring scaling.
+  Save the fitted transformers with the model. Validation, test, and inference use transform only. Pipelines reduce accidental leakage. [S3]
+
+Step 7 — Stop on audit failure
+  Assert zero overlap in row IDs and feature fingerprints across the final splits; also assert group disjointness when a group split is claimed. Check again after final feature selection or transformation if that creates identical inputs. Verify labels are absent from X, train supports cover required labels, and all post-transform numeric values are finite.
+  For labels absent from an evaluation split, report support zero and unavailable class metrics. Do not silently omit them to inflate macro-F1.
+
+10. MODEL CONFIGURATIONS AND TRAINING BUDGET
+
+Fit a DummyClassifier(strategy='most_frequent') first. It is a sanity baseline, not one of the five required models. It illustrates why accuracy alone can look strong on an imbalanced dataset.
+
+Decision Tree — Person A
+  First configuration: max_depth=10, min_samples_leaf=5, class_weight='balanced', random_state=42.
+  One possible variant: max_depth=6 for a smaller edge candidate.
+  Purpose: cheap, interpretable baseline and likely small deployment artifact.
+
+Random Forest — Person A
+  First configuration: n_estimators=100, max_depth=12, min_samples_leaf=2, class_weight='balanced_subsample', n_jobs=2, random_state=42.
+  One possible variant: 50 trees, max_depth=10.
+  Purpose: nonlinear baseline; check whether extra accuracy justifies size and latency.
+
+Logistic Regression — Person A
+  First configuration: C=1.0, max_iter=500, class_weight='balanced', with scaled numeric inputs and encoded categories.
+  One possible variant: C=0.1.
+  Inspect convergence warnings. If necessary, increase iterations within the time budget or report nonconvergence; do not suppress warnings as a “fix”.
+  Purpose: compact linear baseline.
+
+XGBoost — Person B
+  First configuration: n_estimators=100, max_depth=4, learning_rate=0.1, subsample=0.8, colsample_bytree=0.8, tree_method='hist', device='cpu', n_jobs=2, random_state=42.
+  For multiclass use multi:softprob and the verified class count. Encode labels as contiguous integers using the saved mapping.
+  Address imbalance with training-derived sample weights if needed. Do not use binary scale_pos_weight as though it were a multiclass class-weight mapping.
+  One possible variant: max_depth=3 for smaller inference cost. Use the installed version's API, verified locally.
+
+Small dense neural network — Person B
+  Input dimension: the fitted preprocessor's output width.
+  Architecture: input -> Linear(64) -> ReLU -> Linear(32) -> ReLU -> Linear(K).
+  K is the verified number of classes. The final layer outputs logits.
+  Use CrossEntropyLoss on logits and integer labels; apply softmax only when probabilities are needed.
+  Optimizer: Adam, learning rate 0.001, weight_decay=0.0001.
+  Batch size: 256. Maximum 20 epochs. Stop after 3 epochs without validation macro-F1 improvement; restore the best checkpoint.
+  torch.set_num_threads(2), DataLoader num_workers=0 on Windows, CPU tensors, float32 numeric inputs.
+  Start with unweighted loss; try a bounded training-derived weighting scheme only if validation shows minority-class collapse. Log the exact weights. Avoid aggressive weighting plus aggressive oversampling without evidence.
+  Record train loss and validation macro-F1 per epoch. Use model.eval() and torch.inference_mode() for inference.
+
+Fair comparison rules
+  - Same training row selection and common validation/test manifests.
+  - Same allowed raw information; preprocessing may differ appropriately by model.
+  - At most two configurations per family and approximately 15 minutes per configuration initially.
+  - Record all runs, including failed and timed-out runs.
+  - Hyperparameters, thresholds, and preprocessing changes are chosen on validation only.
+  - Freeze models before the final test comparison. Do not select the “winner” by repeatedly inspecting test scores.
+  - If time permits, repeat the top two frozen configurations with seeds 7 and 21 on the same split; label this training-seed variability, not independent-dataset uncertainty.
+
+11. HOW TO MEASURE QUALITY AND ANALYZE ERRORS
+
+Report precision, recall, and F1 per class, with support. For the main aggregate comparison use macro-F1, because each class gets equal weight. Include weighted-F1 and accuracy as secondary summaries. Make absent-class handling explicit. [S11]
+
+For binary normal-versus-attack reporting, attack is the positive class
+  TP: attack predicted as attack.
+  FN: attack predicted as normal.
+  FP: normal predicted as attack.
+  TN: normal predicted as normal.
+  Precision = TP / (TP + FP).
+  Recall = TP / (TP + FN).
+  F1 = 2 * precision * recall / (precision + recall).
+  False positive rate = FP / (FP + TN).
+
+Report undefined denominators as unavailable and explain them. If there is little normal traffic, attach the normal support and avoid strong claims about false-alarm reliability.
+
+Produce two confusion matrices for each model: raw counts and row-normalized percentages. Use true labels as rows and predicted labels as columns, with a consistent label order.
+
+Error analysis procedure
+  1. List the three largest off-diagonal confusion pairs by count.
+  2. Also list large confusion rates so rare attacks are not hidden by DDoS volume.
+  3. Separate attack-to-normal errors from attack-to-wrong-attack errors; their operational meanings differ.
+  4. Inspect 10 to 20 representative error rows, including source/subcategory metadata.
+  5. Compare distributions of a few plausible features for confused pairs.
+  6. Offer explanations as hypotheses unless supported by actual observations.
+
+Example of acceptable wording: “DoS and DDoS are frequently confused in our held-out subset; their rate and packet-count distributions overlap in these features.” Use this only if your results support it. Do not prewrite a finding as though it had already been measured.
+
+Prepare these output tables rather than inventing results
+  model_comparison.csv: model, seed, split_id, n_train, macro_precision, macro_recall, macro_f1, weighted_f1, accuracy, attack_recall, benign_fpr, fit_seconds.
+  per_class.csv: model, class, support, precision, recall, f1.
+  edge_benchmark.csv: model, device, threads, batch_size, p50_ms, p95_ms, rows_per_second, load_seconds, artifact_mib, idle_rss_mib, observed_peak_rss_mib.
+
+12. WHAT EDGE PERFORMANCE MEANS HERE
+
+Your Windows laptop measurements are a CPU feasibility study, not measurements on a Raspberry Pi, microcontroller, or production gateway. In the report use “laptop CPU proxy for edge feasibility.” If the teacher requires actual edge hardware, a physical-device run remains an unmet requirement until you obtain access to one.
+
+A small artifact is not enough to prove deployability. Measure its runtime, memory, required feature availability, and software dependencies. A Python/PyTorch application may suit a gateway-class device but is not automatically suitable for a tiny MCU.
+
+Benchmark protocol — implemented by Person B
+  1. Record CPU model, physical/logical core counts, RAM, Windows version, power mode, library versions, and model hash. Run on AC power and close heavy applications.
+  2. Use one CPU thread consistently: set OMP_NUM_THREADS, MKL_NUM_THREADS, OPENBLAS_NUM_THREADS and model-specific thread options before model libraries initialize. Record any runtime that does not honor the setting.
+  3. Load one frozen model into a fresh process. Time loading separately.
+  4. Use a fixed representative validation-derived benchmark input set, saved before final test evaluation. Avoid disk reads inside the inference timer.
+  5. Warm up with 100 calls. Time at least 1,000 batch-size-one predictions using perf_counter_ns. Report median and p95 milliseconds per call; repeat the run three times.
+  6. Separately measure batches of 256 rows and calculate throughput as rows divided by total measured seconds. Do not call batch throughput “single-flow latency”.
+  7. Measure model-only inference on transformed inputs, and preprocessing-plus-prediction on raw feature rows. Report which boundary each number uses.
+  8. Measure baseline process RSS after loading and sample RSS during processing. Report the observed peak and sampling interval; short peaks can be missed. Use a separate memory pass if sampling distorts latency.
+  9. Sum the saved model, transformer, label-map, and schema file sizes. Report MiB consistently using 1,048,576 bytes per MiB. State that installed runtime/dependency disk space is excluded.
+  10. Check prediction parity before and after saving/loading. If exporting or quantizing, check metrics again and label the exported variant separately.
+
+This benchmark excludes packet capture, flow construction, aggregation windows, network transport, and alert handling. A model that uses completed-flow features cannot detect that flow before the required features become available. Avoid describing model inference time as end-to-end attack-detection delay.
+
+Predeclare this selection rule on Day 1
+  First identify the strongest validation macro-F1. Among models within 0.02 absolute macro-F1 of it, prefer lower preprocessing-plus-prediction p95 latency and smaller artifacts, while checking minority-class recall and benign false alarms.
+  Provisional engineering targets: p95 below 10 ms per input row, bundle below 10 MiB, and observed inference RSS below 500 MiB on this laptop. These are project targets, not assignment requirements or measured achievements.
+  If no model meets the targets, report the best tradeoff and missed targets. Do not change the targets after test evaluation to claim success.
+
+13. SYSTEM ARCHITECTURE AND REPOSITORY
+
+Offline training data flow
+  official CSV files
+    -> schema audit and source manifest
+    -> deterministic cleaning and duplicate audit
+    -> frozen split manifests
+    -> shared training sample
+    -> training-only fitted preprocessing
+    -> five model trainers
+    -> validation selection
+    -> frozen test evaluation and CPU benchmark
+    -> tables, plots, report, model bundle
+
+Prediction data flow
+  feature CSV -> schema validation -> saved transformer -> saved model
+  -> label mapping -> output CSV with row ID, predicted class, and optional score.
+
+No HTTP API is needed. The command line is the interface for this mini-project.
+
+Proposed repository layout
+
+  README.md
+  requirements.in
+  requirements-lock.txt
+  .gitignore
+  configs/experiment.yaml
+  data/raw/                    original files, ignored by Git
+  data/interim/                temporary database/parquet, ignored
+  data/processed/              train/validation/test, ignored
+  data/manifests/              source, splits, labels and schema
+  src/__init__.py
+  src/prepare_data.py          Person A
+  src/preprocessing.py         Person A, reviewed by B
+  src/train_classical.py       Person A
+  src/train_xgb.py             Person B
+  src/train_dense.py           Person B
+  src/evaluate.py              Person A, interface agreed together
+  src/benchmark.py             Person B
+  src/predict.py               Person B
+  src/common.py                shared config and run metadata
+  tests/test_data_contract.py
+  tests/test_model_roundtrip.py
+  models/                     saved bundles, large artifacts ignored
+  results/                    machine-generated CSV and JSON
+  reports/figures/
+  reports/final_report.pdf
+
+Use short notebooks only for exploration if desired. The final pipeline should not depend on manually executing notebook cells in a particular hidden state.
+
+Each saved bundle must include
+  - Model weights or estimator.
+  - Fitted preprocessing object.
+  - feature_schema.json and label_map.json.
+  - Training configuration, random seed, split ID, and dependency versions.
+  - Validation metrics and artifact hashes.
+
+For scikit-learn models, serialize the complete pipeline using joblib. For XGBoost, save its supported native model format plus preprocessing. For PyTorch, save state_dict, architecture parameters, and preprocessing. Only load your team's trusted artifacts; pickle/joblib loading can execute code.
+
+Input validation should reject missing required columns, incompatible types, and schema-version mismatches with a useful error. Handle documented missing values and unseen categorical values with the fitted policy. Predictions are model outputs, not certified probabilities of safety.
+
+Suggested commands to implement
+  These are target interfaces. They will work only after you or an agent implement the corresponding modules.
+
+    .\.venv\Scripts\python.exe -m src.prepare_data --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.train_classical --model decision_tree --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.train_classical --model random_forest --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.train_classical --model logistic_regression --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.train_xgb --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.train_dense --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.evaluate --split test --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.benchmark --threads 1 --config configs/experiment.yaml
+    .\.venv\Scripts\python.exe -m src.predict --bundle models/selected --input data/demo.csv --output results/demo_predictions.csv
+    .\.venv\Scripts\python.exe -m pytest -q
+
+Minimum meaningful tests
+  - No target/metadata leakage in the allowed feature list.
+  - No row/fingerprint overlaps across splits; group overlaps checked when applicable.
+  - Unknown labels fail visibly; class order survives save/load.
+  - Transformers fit only on training data and accept documented missing/unseen inputs.
+  - Prediction outputs match before and after reloading a bundle.
+  - Benchmark does not include training or file I/O in its prediction timer.
+
+Collaboration rules
+  Keep one shared configuration and frozen manifests. Use separate branches such as codex/data-baselines and codex/models-benchmark. Commit small, coherent changes; review shared interface edits together. Never independently regenerate the split on each branch.
+  Ignore .venv/, raw/processed data, temporary databases, caches, and large model artifacts. Keep small result tables, code, configs, and provenance notes under version control.
+
+14. REPORT AND DEMONSTRATION
+
+Suggested report structure, 6 to 8 pages
+  1. Problem and scope: IoT traffic classification and the lightweight inference goal.
+  2. Dataset: official source, selected subset, actual counts, labels, imbalance, and feature choices.
+  3. Method: cleaning, duplicate policy, split procedure, sampling, preprocessing, and five models.
+  4. Results: common test comparison table and per-class performance.
+  5. Error analysis: confusion matrices and a few supported observations.
+  6. Resource measurements: machine specification, timing boundaries, memory, artifact sizes, and selected candidate.
+  7. Limitations and conclusion: what the experiment establishes and what remains untested.
+  Include references and a brief contribution statement for both people.
+
+Required limitations to discuss when applicable
+  - Laboratory traffic and attack scenarios differ from real networks.
+  - The official 5% subset and your training sample affect representativeness.
+  - Deduplication/conflict removal changes the population being evaluated.
+  - Row-based splits may retain correlated traffic even after exact duplicates are removed.
+  - Rare normal/attack classes make some estimates unstable.
+  - Excellent accuracy can hide minority-class failures and false alarms.
+  - No evidence of generalization to new networks, new devices, or unseen attack families without a suitable held-out design.
+  - Feature extraction and full detection delay are not included in the CPU inference numbers.
+  - Laptop measurements do not prove Raspberry Pi or MCU performance.
+  - The prototype detects patterns; it does not automatically prevent attacks.
+
+Demonstration sequence, approximately 5 to 8 minutes
+  Person A: explain the dataset, class imbalance, and leakage controls.
+  Person B: show the architecture and run predict on a small held-out-derived feature file.
+  Person A: explain the comparison table and one meaningful confusion.
+  Person B: explain latency/size measurements and why the deployment candidate was selected.
+  Both: state two important limitations and the next experiment you would run with more time.
+
+15. READY TO USE AI AGENT PROMPTS
+
+Use these prompts one task at a time. Attach this plan, the relevant actual files, and the current error/output when asking for help. Do not ask an agent to “build everything” in one uncontrolled pass. Each owner reviews the generated code and runs the relevant checks.
+
+PROMPT 0 — Shared context for every implementation agent
+
+You are assisting a two-person academic IoT intrusion-detection mini-project with a three-day deadline. Hardware: Windows, 8 GB RAM, CPU-only execution. Follow IoT_Project_Plan_3_Days.txt. Dataset: the official Bot-IoT 5% subset, whose actual files and schema must be inspected. Required models: Decision Tree, Random Forest, Logistic Regression, XGBoost, and a small dense neural network. Use one frozen train/validation/test split and the same training sample. Never fit preprocessing on validation/test, expose labels or metadata as features, invent dataset columns, fabricate metrics, or tune on final test results. Keep memory bounded and train one model at a time. First inspect the repository and existing instructions. State your assumptions, implement only the assigned module, run targeted checks, and summarize changed files, commands, actual outputs, and remaining issues. If data is missing, report the missing input rather than presenting synthetic results as real experiments. Coordinate shared interface changes before altering them.
+
+PROMPT 1 — Person B establishes the project skeleton
+
+Using the shared context, create a minimal Python project structure and requirements.in. Add YAML configuration for paths, seed=42, model parameters, thread budgets, and output locations. Implement common configuration loading, reproducible run IDs, and result metadata. Document PowerShell commands using .venv\Scripts\python.exe directly. Do not download the dataset, install GPU dependencies, or create a dashboard. Coordinate feature_schema.json, label_map.json, and the evaluation interface with Person A. Use synthetic fixtures only for code smoke tests and label them clearly. Deliver a short README with commands and a list of interfaces still to be implemented.
+
+PROMPT 2 — Person A inspects and prepares data
+
+Using the shared context, inspect the actual CSV headers and official feature documentation before coding mappings. Implement src/prepare_data.py for chunked or disk-backed processing. Produce a source manifest, feature exclusions with reasons, real label counts, missing-value statistics, canonical feature fingerprints, duplicate/conflicting-label audits, frozen splits, and a reproducible reduced training sample. Prefer verified capture/session/time separation when feasible; otherwise document a deduplicated stratified row split and its correlation limitation. Do not assume CSV partitions are independent captures. Preserve holdout prevalence, evaluate in batches, and assert no row/fingerprint overlap. Report rare classes with inadequate split support. Save schemas and manifests that every model can reuse. Never guess unknown labels or include target fields in X.
+
+PROMPT 3 — Person A implements the baselines
+
+Using the shared context and frozen manifests, implement Decision Tree, Random Forest, Logistic Regression, and a majority-class dummy baseline. Use the plan's small configurations. Fit preprocessing only on the shared training sample and serialize full inference bundles. Use validation macro-F1 for configuration choice; do not read test metrics while selecting parameters. Record fit time, warnings, row counts, label order, config, seed, versions, and split ID. Limit training threads to two and expose a single-model CLI. Add a save/load prediction-parity check and schema rejection test. Return actual validation outputs without claiming final results for runs that did not execute.
+
+PROMPT 4 — Person B implements XGBoost and the dense network
+
+Using the shared context, implement src/train_xgb.py and src/train_dense.py with the exact same split and training sample as the baselines. Use CPU XGBoost histogram training and a PyTorch input-64-32-K network with ReLU hidden layers, raw output logits, CrossEntropyLoss, Adam, batch size 256, at most 20 epochs, and external-validation macro-F1 early stopping with patience 3. Save and restore the best checkpoint. Use training-derived class/sample weights only when justified and log them; do not use binary scale_pos_weight as multiclass weighting. Keep Windows DataLoader workers at zero. Save preprocessing, label order, architecture, and state_dict. Verify loading in a fresh process and prediction parity. Do not silently swap the shared validation split for an internal one.
+
+PROMPT 5 — Person A implements evaluation and error analysis
+
+Using the shared context, implement a common evaluator for all saved models. Stream held-out batches, calculate per-class precision/recall/F1/support, macro and weighted summaries, accuracy, binary attack recall, and benign false-positive rate. Use the saved class order consistently. Generate raw and row-normalized confusion matrices and model_comparison.csv. Report zero-support classes and undefined metrics honestly. Identify the largest off-diagonal errors by count and rate, and keep false negatives separate from attack-category confusions. Do not modify a model or choose thresholds based on test results. Produce observations only from actual outputs and link each table or plot to its run metadata.
+
+PROMPT 6 — Person B implements inference and benchmarks
+
+Using the shared context, implement src/predict.py and src/benchmark.py. Validate feature schemas and use trusted saved preprocessing/model bundles. Benchmark one model per fresh process on the same laptop and fixed validation-derived input sample. Limit threads consistently, warm up 100 calls, time at least 1000 single-row predictions, repeat three times, and report p50/p95. Measure batch-256 throughput separately. Time model-only and preprocessing-plus-model inference separately; exclude disk I/O and training. Record load time, CPU/OS/runtime versions, bundle size, baseline RSS, sampled peak RSS, and sampling interval. State that packet capture, feature extraction, and actual edge-device performance are unmeasured. Check prediction parity after serialization and return generated CSV files, not guessed timings.
+
+PROMPT 7 — Independent review before freezing experiments
+
+Review this repository as an ML methodology reviewer. Prioritize label leakage, cross-split duplicates, mistaken session grouping, pre-split scaling or resampling, train/test feature mismatch, rare-class support, test-driven tuning, invalid multiclass weights, and benchmark timing boundaries. Inspect code and actual manifests. Report actionable findings with file/line references and a concrete fix. Distinguish confirmed defects from concerns requiring more evidence. Do not rewrite the whole project or introduce optional infrastructure. Run only targeted checks needed to substantiate your findings.
+
+PROMPT 8 — Draft the short report from evidence
+
+Write a concise academic report using only the supplied source manifest, configuration, split audit, model result CSVs, figures, and benchmark metadata. Explain the problem, dataset, preparation, five models, evaluation, observed confusions, resource tradeoffs, and limitations. Include a two-person contribution statement based on actual work. Do not invent performance values, missing experiments, hardware measurements, significance claims, or real-world security guarantees. Describe laptop benchmarks as a proxy for edge feasibility. Flag missing evidence explicitly and cite the official dataset source and paper. Keep the main report around 6 to 8 pages when formatted.
+
+16. FINAL ACCEPTANCE CHECKLIST
+
+Before submission, both people check
+  [ ] Official source, actual filenames, subset, citation, and checksums are recorded.
+  [ ] Class counts and supports are real and traceable to code outputs.
+  [ ] Label-derived fields and excluded metadata cannot enter any model.
+  [ ] Split and duplicate audits pass; the limitation of the chosen split is stated.
+  [ ] All five required models trained successfully on the same saved training sample.
+  [ ] Preprocessing is fitted only on train and saved for inference.
+  [ ] Hyperparameters and selection rules were frozen before final test evaluation.
+  [ ] Precision, recall, F1, and confusion matrices are available, including rare-class support.
+  [ ] False alarms and missed attacks are explicitly discussed.
+  [ ] Timing boundaries, device details, thread counts, size, and memory are documented.
+  [ ] Laptop CPU results are not presented as actual edge-hardware measurements.
+  [ ] Model save/load parity and CLI prediction work.
+  [ ] README commands match the implemented code and locked environment.
+  [ ] Every number in the report matches a saved result.
+  [ ] Both people can explain preprocessing, leakage, model choice, and limitations.
+
+17. SOURCES AND INSTALLATION REFERENCES
+
+Official pages checked on 20 November 2026. Dataset files, package installation, and model execution have not been validated as part of writing this plan. Numeric compute budgets and selection targets above are proposed project decisions.
+
+[S1] UNSW Research — The Bot-IoT Dataset. Official download entry point, dataset summary, 5% subset description, academic-use terms, and required paper citation.
+https://research.unsw.edu.au/projects/bot-iot-dataset
+
+[S2] University of New Brunswick CIC — CIC IoT Dataset 2023. Official fallback dataset description and CSV/download entry point.
+https://www.unb.ca/cic/datasets/iotdataset-2023.html
+
+[S3] scikit-learn — Common pitfalls and recommended practices. Training-only fitting and consistent preprocessing.
+https://scikit-learn.org/stable/common_pitfalls.html
+
+[S4] Python — Windows downloads.
+https://www.python.org/downloads/windows/
+
+[S5] Git — Install for Windows.
+https://git-scm.com/install/windows
+
+[S6] Visual Studio Code — Windows setup.
+https://code.visualstudio.com/docs/setup/windows
+
+[S7] XGBoost — Installation guide, including the Windows Visual C++ runtime dependency.
+https://xgboost.readthedocs.io/en/stable/install.html
+
+[S8] PyTorch — Start locally and select CPU installation.
+https://pytorch.org/get-started/locally/
+
+[S9] scikit-learn — MLPClassifier, fallback dense-network implementation.
+https://scikit-learn.org/stable/modules/generated/sklearn.neural_network.MLPClassifier.html
+
+[S10] scikit-learn — StratifiedGroupKFold.
+https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.StratifiedGroupKFold.html
+
+[S11] scikit-learn — Model evaluation and scoring.
+https://scikit-learn.org/stable/modules/model_evaluation.html
+
+Dataset paper to include in the report: Koroniotis, N., Moustafa, N., Sitnikova, E., and Turnbull, B. “Towards the development of realistic botnet dataset in the internet of things for network forensic analytics: Bot-IoT dataset.” Future Generation Computer Systems 100 (2019), 779–796. Bibliographic details are provided by the official UNSW page. [S1]
