@@ -163,6 +163,8 @@ def evaluate(args):
         pd.DataFrame(cm, index=bundle['encoder'].classes_, columns=bundle['encoder'].classes_).to_csv(RESULTS / (path.stem + '_confusion.csv'))
         normalized = np.divide(cm, cm.sum(axis=1, keepdims=True), out=np.zeros_like(cm, dtype=float), where=cm.sum(axis=1, keepdims=True) != 0)
         pd.DataFrame(normalized, index=bundle['encoder'].classes_, columns=bundle['encoder'].classes_).to_csv(RESULTS / (path.stem + '_confusion_normalized.csv'))
+        import matplotlib
+        matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         import seaborn as sns
         fig, ax = plt.subplots(figsize=(8, 6))
