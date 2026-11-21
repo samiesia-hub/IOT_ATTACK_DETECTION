@@ -35,6 +35,19 @@ SEED = 42
 EXCLUDE = {'attack', 'category', 'subcategory', 'pkSeqID', 'seq', 'saddr', 'daddr', 'stime', 'ltime', 'row_id', 'Unnamed: 0'}
 
 
+def normalize_ports(frame):
+    """Parse decimal and hexadecimal port values; unparseable values become missing."""
+    frame = frame.copy()
+    for column in ('sport', 'dport'):
+        if column in frame:
+            text = frame[column].astype('string').str.strip()
+            decimal = pd.to_numeric(text, errors='coerce')
+            is_hex = text.str.match(r'^0[xX][0-9a-fA-F]+$', na=False)
+            decimal.loc[is_hex] = text.loc[is_hex].map(lambda value: int(value, 16))
+            frame[column] = pd.to_numeric(decimal, errors='coerce').astype('float64')
+    return frame
+
+
 def dirs():
     for path in (DATA, MODELS, RESULTS):
         path.mkdir(parents=True, exist_ok=True)
@@ -50,6 +63,7 @@ def prepare(args):
     for path in files:
         for chunk in pd.read_csv(path, chunksize=50000, low_memory=False):
             chunk.columns = chunk.columns.str.strip()
+            chunk = normalize_ports(chunk)
             if not {'attack', 'category', 'subcategory'}.issubset(chunk.columns):
                 raise SystemExit(f'{path} is missing attack/category/subcategory columns; check the official release schema.')
             attack = pd.to_numeric(chunk['attack'], errors='coerce')
@@ -179,6 +193,7 @@ def predict(args):
     selected = json.loads((RESULTS / 'validation.json').read_text(encoding='utf8'))['selected_model']
     bundle = joblib.load(MODELS / (selected + '.joblib'))
     df = pd.read_csv(args.input)
+    df = normalize_ports(df)
     missing = set(bundle['features']) - set(df.columns)
     if missing:
         raise SystemExit('Missing required features: ' + ', '.join(sorted(missing)))
